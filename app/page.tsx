@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
 
 interface Todo {
   id: number;
@@ -9,16 +10,74 @@ interface Todo {
   created_at: string;
 }
 
+function StreakBar({ streak }: { streak: number }) {
+  const dots = [1, 2, 3];
+  return (
+    <div className="flex items-center gap-2 mb-6">
+      <span className="text-xs text-gray-400 font-medium">Streak</span>
+      {dots.map(n => (
+        <div
+          key={n}
+          className={`w-4 h-4 rounded-full transition-all duration-300 ${
+            streak >= n ? 'bg-yellow-400 scale-110 shadow-md' : 'bg-gray-200'
+          }`}
+        />
+      ))}
+      {streak > 0 && (
+        <span className="text-xs text-yellow-500 font-semibold ml-1">
+          {streak}/3
+        </span>
+      )}
+    </div>
+  );
+}
+
+function CelebrationOverlay({ onDone }: { onDone: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onDone, 3500);
+    return () => clearTimeout(timer);
+  }, [onDone]);
+
+  return (
+    <div
+      className="fixed inset-0 flex flex-col items-center justify-center z-50 bg-black/40 backdrop-blur-sm"
+      onClick={onDone}
+    >
+      <div className="text-center animate-bounce">
+        <div className="text-7xl mb-4">🎉</div>
+        <h2 className="text-4xl font-extrabold text-white drop-shadow-lg mb-2">
+          3-Todo Streak!
+        </h2>
+        <p className="text-white/80 text-lg">You&apos;re on fire! Keep it up!</p>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
+  const [streak, setStreak] = useState(0);
+  const [celebrating, setCelebrating] = useState(false);
+  const streakRef = useRef(0);
 
   useEffect(() => {
     fetch('/api/todos')
       .then(r => r.json())
       .then(data => { setTodos(data); setLoading(false); });
   }, []);
+
+  function celebrate() {
+    setCelebrating(true);
+    const end = Date.now() + 3000;
+    const frame = () => {
+      confetti({ particleCount: 6, angle: 60, spread: 55, origin: { x: 0 } });
+      confetti({ particleCount: 6, angle: 120, spread: 55, origin: { x: 1 } });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
 
   async function addTodo(e: React.FormEvent) {
     e.preventDefault();
@@ -34,13 +93,25 @@ export default function Home() {
   }
 
   async function toggleTodo(todo: Todo) {
+    const completing = !todo.completed;
     const res = await fetch(`/api/todos/${todo.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ completed: !todo.completed }),
+      body: JSON.stringify({ completed: completing }),
     });
     const updated = await res.json();
     setTodos(prev => prev.map(t => t.id === todo.id ? updated : t));
+
+    if (completing) {
+      const next = streakRef.current + 1;
+      streakRef.current = next % 3;
+      setStreak(next % 3);
+      if (next % 3 === 0) celebrate();
+    } else {
+      // unchecking breaks the streak
+      streakRef.current = 0;
+      setStreak(0);
+    }
   }
 
   async function deleteTodo(id: number) {
@@ -52,11 +123,15 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gray-50 py-12 px-4">
+      {celebrating && <CelebrationOverlay onDone={() => setCelebrating(false)} />}
+
       <div className="max-w-md mx-auto">
         <h1 className="text-3xl font-bold text-gray-800 mb-2">Todo List</h1>
-        <p className="text-gray-500 mb-6 text-sm">
+        <p className="text-gray-500 mb-4 text-sm">
           {remaining} task{remaining !== 1 ? 's' : ''} remaining
         </p>
+
+        <StreakBar streak={streak} />
 
         <form onSubmit={addTodo} className="flex gap-2 mb-6">
           <input
